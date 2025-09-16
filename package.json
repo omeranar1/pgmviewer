@@ -1,6 +1,7 @@
 {
   "name": "pgmviewer",
   "displayName": "PgmViewer",
+  "publisher": "omeranar1",
   "description": "pgm viewer",
   "repository": {
     "type": "git",
