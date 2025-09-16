@@ -1,4 +1,4 @@
-test2test# PGM Viewer for VSCode
+# PGM Viewer for VSCode
 
 A custom editor extension for Visual Studio Code that renders `.pgm` files in **P5 (binary)** Portable Graymap format.
 
@@ -34,10 +34,10 @@ A custom editor extension for Visual Studio Code that renders `.pgm` files in **
 
 - PGM P5 (Binary Portable Graymap) only.
 - Expected header format:
-P5
-<width> <height>
-<maxGrayValue>
-[binary pixel data]
+    P5
+    <width> <height>
+    <maxGrayValue>
+    [binary pixel data]
 
 ---
 
