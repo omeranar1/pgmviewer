@@ -34,10 +34,14 @@ A custom editor extension for Visual Studio Code that renders `.pgm` files in **
 
 - PGM P5 (Binary Portable Graymap) only.
 - Expected header format:
-    P5
-    <width> <height>
-    <maxGrayValue>
-    [binary pixel data]
+
+*P5*
+
+*width height*
+
+*maxGrayValue*
+
+*binary pixel data*
 
 ---
 
@@ -60,13 +64,6 @@ The code is well-commented for easy understanding and customization.
 ## License
 
 MIT License. Feel free to use, modify, and share!
-
----
-
-## Screenshot
-
-![PGM Viewer Screenshot](screenshot.png)  
-*Example of PGM Viewer rendering a grayscale image.*
 
 ---
 
