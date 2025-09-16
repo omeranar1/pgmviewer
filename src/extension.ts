@@ -2,102 +2,301 @@ import * as vscode from 'vscode';
 
 export function activate(context: vscode.ExtensionContext)
 {
-	context.subscriptions.push(
-		vscode.window.registerCustomEditorProvider(
-			'pgmviewer.pgmEditor',
-			new PgmEditorProvider(context),
-			{
-				supportsMultipleEditorsPerDocument: false
-			}
-		)
-	);
+    const provider = new PgmEditorProvider(context);
+    context.subscriptions.push(
+        vscode.window.registerCustomEditorProvider(
+            'pgmviewer.pgmEditor',
+            provider,
+            {
+                supportsMultipleEditorsPerDocument: false
+            }
+        )
+    );
+
+    // Dosya değiştiğinde event dinle
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeTextDocument(event =>
+        {
+            provider.onDocumentChanged(event.document);
+        })
+    );
+
+    // context.subscriptions.push(
+    //     vscode.window.onDidChangeActiveTextEditor(editor =>
+    //     {
+    //         if (editor)
+    //         {
+    //             console.log("[pgmView]", 'Aktif sekme değişti:', editor.document.uri.toString());
+    //         }
+    //     })
+    // );
+    // console.log("[pgmView]", "onActivated");
 }
 
 class PgmEditorProvider implements vscode.CustomTextEditorProvider
 {
+    public _scale = 1.0;
+    public _offsetX = 0;
+    public _offsetY = 0;
+    public _lastDocumentUri = '';
 
-	constructor(private readonly context: vscode.ExtensionContext) { }
+    private uriViewStates = new Map<string, {
+        scale: number;
+        offsetX: number;
+        offsetY: number;
+    }>();
 
-	public async resolveCustomTextEditor(
-		document: vscode.TextDocument,
-		webviewPanel: vscode.WebviewPanel,
-		_token: vscode.CancellationToken
-	): Promise<void>
-	{
-		webviewPanel.webview.options = {
-			enableScripts: true,
-		};
+    private webviews = new Map<string, vscode.WebviewPanel>();
+    constructor(private readonly context: vscode.ExtensionContext) { }
 
-		// Dosyayı binary olarak oku
-		const fileUri = document.uri;
-		const fileData = await vscode.workspace.fs.readFile(fileUri);
-		const pgmData = this.parseP5Pgm(fileData);
+    public async resolveCustomTextEditor(
+        document: vscode.TextDocument,
+        webviewPanel: vscode.WebviewPanel,
+        _token: vscode.CancellationToken
+    ): Promise<void>
+    {
+        console.log("[pgmView]", "BEGIN PgmEditorProvider");
 
-		webviewPanel.webview.html = this.getHtmlForWebview(pgmData);
-	}
+        // const currentUri = document.uri.toString();
+        // if (this._lastDocumentUri === currentUri)
+        // {
+        //     console.log("[pgmView]", "SAME PgmEditorProvider", currentUri);
+        //     webviewPanel.webview.postMessage({
+        //         command: 'centerView'
+        //     });
+        // }
+        // else
+        // {
+        //     console.log("[pgmView]", "CHANGED PgmEditorProvider", currentUri);
+        //     webviewPanel.webview.postMessage({
+        //         command: 'resetView'
+        //     });
+        //     // this._scale = 1.0;
+        //     // this._offsetX = 0;
+        //     // this._offsetY = 0;
+        // }
 
-	private parseP5Pgm(data: Uint8Array)
-	{
-		const decoder = new TextDecoder("ascii");
 
-		let headerLines: string[] = [];
-		let headerEndIndex = 0;
-		let currentLine = '';
+        // this._lastDocumentUri = currentUri;
 
-		for (let i = 0; i < data.length; i++)
-		{
-			const char = String.fromCharCode(data[i]);
-			if (char === '\n')
-			{
-				const trimmedLine = currentLine.trim();
-				if (trimmedLine.length > 0 && !trimmedLine.startsWith('#'))
-				{
-					headerLines.push(trimmedLine);
-				}
+        webviewPanel.webview.options = {
+            enableScripts: true,
+        };
 
-				if (headerLines.length === 3)
-				{
-					headerEndIndex = i + 1; // \n dahil
-					break;
-				}
+        // Webview paneli map'e kaydet
+        this.webviews.set(document.uri.toString(), webviewPanel);
 
-				currentLine = '';
-			} else
-			{
-				currentLine += char;
-			}
-		}
+        // Panel kapandığında map'ten çıkar
+        webviewPanel.onDidDispose(() =>
+        {
+            this.webviews.delete(document.uri.toString());
+        });
 
-		if (headerLines[0] !== 'P5')
-		{
-			throw new Error('Sadece P5 PGM formatı destekleniyor');
-		}
+        webviewPanel.webview.onDidReceiveMessage(message =>
+        {
+            switch (message.command)
+            {
+                case 'save2Global':
+                    console.log("[pgmView]", 'save2Global çağrıldı');
+                    this._scale = message.data.scale; // İstediğin değeri ata
+                    this._offsetX = message.data.offsetX; // İstediğin değeri ata
+                    this._offsetY = message.data.offsetY; // İstediğin değeri ata
+                    break;
+            }
+        });
 
-		const [width, height] = headerLines[1].split(/\s+/).map(Number);
-		const maxGray = Number(headerLines[2]);
+        webviewPanel.onDidChangeViewState(e =>
+        {
+            const uri = document.uri.toString();
+            if (e.webviewPanel.active)
+            {
 
-		const pixels = data.slice(headerEndIndex);
+                console.log("[pgmView]", 'PGM webview aktif oldu:', uri);
 
-		if (pixels.length < width * height)
-		{
-			console.warn(`Uyarı: Beklenen piksel sayısı ${width * height}, ancak yalnızca ${pixels.length} byte veri var.`);
-		}
+                const viewState = this.uriViewStates.get(uri);
+                if (viewState)
+                {
+                    console.log("[pgmView]", 'viewState.scale', viewState.scale); // viewState.scale = 2.5;
+                    // console.log("[pgmView]", 'viewState.offsetX', viewState.offsetX); // viewState.scale = 2.5;
+                    // console.log("[pgmView]", 'viewState.offsetY', viewState.offsetY); // viewState.scale = 2.5;
 
-		return {
-			width,
-			height,
-			maxGray,
-			pixels
-		};
-	}
+                    this._scale = viewState.scale;
+                    this._offsetX = viewState.offsetX;
+                    this._offsetY = viewState.offsetY;
 
-	private getHtmlForWebview(pgmData: { width: number, height: number, maxGray: number, pixels: Uint8Array })
-	{
-		const { width, height, maxGray, pixels } = pgmData;
+                    webviewPanel.webview.postMessage({
+                        command: 'setView',
+                        data: {
+                            scale: this._scale,
+                            offsetX: this._offsetX,
+                            offsetY: this._offsetY
+                        }
+                    });
 
-		const base64Pixels = Buffer.from(pixels).toString('base64');
 
-		return `
+
+                }
+                else
+                {
+                    console.log("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz");
+                    // this._scale = 1.0;
+                    // this._offsetX = 0;
+                    // this._offsetY = 0;
+
+                    // webviewPanel.webview.postMessage({
+                    //     command: 'setView',
+                    //     data: {
+                    //         scale: this._scale,
+                    //         offsetX: this._offsetX,
+                    //         offsetY: this._offsetY
+                    //     }
+                    // });
+
+                    // webviewPanel.webview.postMessage({
+                    //     command: 'centerView'
+                    // });
+                    // webviewPanel.webview.postMessage({
+                    //     command: 'resetView'
+                    // });
+                }
+
+            } else
+            {
+                console.log("[pgmView]", 'PGM webview arka plana geçti', uri);
+
+                if (!this.uriViewStates.has(uri))
+                {
+                    this.uriViewStates.set(uri, { scale: this._scale, offsetX: this._offsetX, offsetY: this._offsetX });
+                }
+                else
+                {
+                    const viewState = this.uriViewStates.get(uri);
+                    if (viewState)
+                    {
+                        viewState.scale = this._scale;
+                        viewState.offsetX = this._offsetX;
+                        viewState.offsetY = this._offsetY;
+                    }
+                }
+            }
+
+
+
+
+
+        });
+
+
+        webviewPanel.webview.postMessage({
+            command: 'resetView'
+        });
+
+
+        await this.updateWebview(document, webviewPanel);
+    }
+    public async onDocumentChanged(document: vscode.TextDocument)
+    {
+        const panel = this.webviews.get(document.uri.toString());
+        if (panel)
+        {
+            await this.updateWebview(document, panel);
+        }
+    }
+
+    private async updateWebview(document: vscode.TextDocument, webviewPanel: vscode.WebviewPanel)
+    {
+        try
+        {
+            const fileUri = document.uri;
+            const fileData = await vscode.workspace.fs.readFile(fileUri);
+            const pgmData = this.parseP5Pgm(fileData);
+
+            webviewPanel.webview.html = this.getHtmlForWebview(pgmData, this._scale, this._offsetX, this._offsetY);
+
+            // const currentUri = document.uri.toString();
+            // if (this._lastDocumentUri === currentUri)
+            // {
+            //     console.log("[pgmView]", "SAME updateWebview", currentUri);
+            // }
+            // else
+            // {
+            //     console.log("[pgmView]", "CHANGED updateWebview", currentUri);
+            //     webviewPanel.webview.postMessage({
+            //         command: 'resetView'
+            //     });
+
+            // }
+
+            // this._lastDocumentUri = currentUri;
+
+
+
+        } catch (error)
+        {
+            webviewPanel.webview.html = `<body><h1>Dosya yüklenirken hata oluştu</h1></body>`;
+        }
+    }
+    private parseP5Pgm(data: Uint8Array)
+    {
+        const decoder = new TextDecoder("ascii");
+
+        let headerLines: string[] = [];
+        let headerEndIndex = 0;
+        let currentLine = '';
+
+        for (let i = 0; i < data.length; i++)
+        {
+            const char = String.fromCharCode(data[i]);
+            if (char === '\n')
+            {
+                const trimmedLine = currentLine.trim();
+                if (trimmedLine.length > 0 && !trimmedLine.startsWith('#'))
+                {
+                    headerLines.push(trimmedLine);
+                }
+
+                if (headerLines.length === 3)
+                {
+                    headerEndIndex = i + 1; // \n dahil
+                    break;
+                }
+
+                currentLine = '';
+            } else
+            {
+                currentLine += char;
+            }
+        }
+
+        if (headerLines[0] !== 'P5')
+        {
+            throw new Error('Sadece P5 PGM formatı destekleniyor');
+        }
+
+        const [width, height] = headerLines[1].split(/\s+/).map(Number);
+        const maxGray = Number(headerLines[2]);
+
+        const pixels = data.slice(headerEndIndex);
+
+        if (pixels.length < width * height)
+        {
+            console.warn(`Uyarı: Beklenen piksel sayısı ${width * height}, ancak yalnızca ${pixels.length} byte veri var.`);
+        }
+
+        return {
+            width,
+            height,
+            maxGray,
+            pixels
+        };
+    }
+    private getHtmlForWebview(pgmData: { width: number, height: number, maxGray: number, pixels: Uint8Array }, _scale: number, _offsetX: number, _offsetY: number)
+    {
+        const { width, height, maxGray, pixels } = pgmData;
+
+        const base64Pixels = Buffer.from(pixels).toString('base64');
+
+        return `
         <!DOCTYPE html>
         <html lang="en">
         <head>
@@ -160,7 +359,7 @@ class PgmEditorProvider implements vscode.CustomTextEditorProvider
             .zoom-info {
                 position: absolute;
                 bottom: 10px;
- 				left: 10px;
+                left: 10px;
                 background: rgba(0, 0, 0, 0.7);
                 color: white;
                 padding: 6px 12px;
@@ -204,6 +403,9 @@ class PgmEditorProvider implements vscode.CustomTextEditorProvider
             </div>
             
             <script>
+                console.log("[pgmView]","BEGIN SCRIPT");
+                const vscode = acquireVsCodeApi();
+
                 const width = ${width};
                 const height = ${height};
                 const maxGray = ${maxGray};
@@ -230,9 +432,9 @@ class PgmEditorProvider implements vscode.CustomTextEditorProvider
                 const pixelInfo = document.getElementById('pixelInfo');
 
                 // Zoom ve offset değişkenleri
-                let scale = 1;
-                let offsetX = 0;
-                let offsetY = 0;
+                let scale = ${_scale};
+                let offsetX = ${_offsetX};
+                let offsetY = ${_offsetY};
                 let isDragging = false;
                 let lastX = 0;
                 let lastY = 0;
@@ -241,8 +443,8 @@ class PgmEditorProvider implements vscode.CustomTextEditorProvider
                 // canvas.width = width;
                 // canvas.height = height;
 
-				canvas.width = container.clientWidth;
-        		canvas.height = container.clientHeight;
+                canvas.width = container.clientWidth;
+                canvas.height = container.clientHeight;
 
                 // Container boyutlandırma - basit versiyon
                 function resizeContainer() {
@@ -251,8 +453,21 @@ class PgmEditorProvider implements vscode.CustomTextEditorProvider
                     
                     container.style.width = containerWidth + 'px';
                     container.style.height = containerHeight + 'px';
+
+                    //resetView();
                     
-                    resetView();
+                    // if(_resetEnable === 1)
+                    // {
+                        // console.log("[pgmView]","22222222222222");
+                        
+                    // }
+                    // else
+                    // {
+                    //     // console.log("[pgmView]","3333333333");
+                    // }
+                    //save2Global();
+
+                    
                 }
 
                 // Orijinal ImageData oluştur
@@ -274,7 +489,20 @@ class PgmEditorProvider implements vscode.CustomTextEditorProvider
                 const image = new Image();
                 image.src = tempCanvas.toDataURL();
 
+                function save2Global() {
+                    vscode.postMessage({
+                        command: 'save2Global',
+                        data: {
+                            scale: scale,
+                            offsetX: offsetX,
+                            offsetY: offsetY
+                        }
+                    });
+                }
+
                 function draw() {
+                    save2Global();
+
                     // Canvas temizle
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
                     
@@ -284,7 +512,7 @@ class PgmEditorProvider implements vscode.CustomTextEditorProvider
                     ctx.scale(scale, scale);
                     
                     // Görüntüyü çiz
-					ctx.imageSmoothingEnabled = false; // 💥 Blur'u engelleyen ayar
+                    ctx.imageSmoothingEnabled = false; // 💥 Blur'u engelleyen ayar
                     ctx.drawImage(image, 0, 0);
                     
                     ctx.restore();
@@ -336,6 +564,25 @@ class PgmEditorProvider implements vscode.CustomTextEditorProvider
                     updateZoomInfo();
                 }
 
+                function setView(data) {
+
+                    console.log("[pgmView]","11111111111111111111111111111111111111111111111111",data);
+                    
+                    scale = data.data.scale;
+                    offsetX = data.data.offsetX;
+                    offsetY = data.data.offsetY;
+                    
+                    // Sadece küçük resimleri ortala, büyükler olduğu gibi kalsın
+                    // if (width < container.clientWidth && height < container.clientHeight) 
+                    // {
+                    //     offsetX = (container.clientWidth - width) / 2;
+                    //     offsetY = (container.clientHeight - height) / 2;
+                    // }
+                    
+                    draw();
+                    updateZoomInfo();
+                }
+
                 function resetView() {
                     scale = 1;
                     offsetX = 0;
@@ -343,7 +590,18 @@ class PgmEditorProvider implements vscode.CustomTextEditorProvider
                     
                     // Sadece küçük resimleri ortala, büyükler olduğu gibi kalsın
                     // if (width < container.clientWidth && height < container.clientHeight) 
-					{
+                    {
+                        offsetX = (container.clientWidth - width) / 2;
+                        offsetY = (container.clientHeight - height) / 2;
+                    }
+                    
+                    draw();
+                    updateZoomInfo();
+                }
+
+                function centerView() {
+                    // if (width < container.clientWidth && height < container.clientHeight) 
+                    {
                         offsetX = (container.clientWidth - width) / 2;
                         offsetY = (container.clientHeight - height) / 2;
                     }
@@ -419,10 +677,12 @@ class PgmEditorProvider implements vscode.CustomTextEditorProvider
 
                 // Keyboard shortcuts
                 document.addEventListener('keydown', (e) => {
-                    if (e.key === 'r' || e.key === 'R') {
-                        resetView();
-                        e.preventDefault();
-                    } else if (e.key === '+' || e.key === '=') {
+                    // if (e.key === 'r' || e.key === 'R') 
+                    // {
+                    //     resetView();
+                    //     e.preventDefault();
+                    // } else
+                    if (e.key === '+' || e.key === '=') {
                         const rect = container.getBoundingClientRect();
                         zoom(1.2, rect.left + rect.width / 2, rect.top + rect.height / 2);
                         e.preventDefault();
@@ -435,6 +695,28 @@ class PgmEditorProvider implements vscode.CustomTextEditorProvider
 
                 // Resize handling
                 window.addEventListener('resize', resizeContainer);
+                
+                // window.addEventListener('message', event => {
+                //      console.log("[pgmView]","ohaaw");
+                // });
+
+                // Image yüklendikten sonra çiz
+                window.addEventListener('message', event => {
+                    const message = event.data;
+                    switch (message.command) {
+                        case 'resetView':
+                            resetView();
+                            break;
+
+                        case 'centerView':
+                            centerView();
+                            break;
+
+                        case 'setView':
+                            setView(event.data);
+                            break;
+                    }
+                });
 
                 // Image yüklendikten sonra çiz
                 image.onload = () => {
@@ -449,5 +731,5 @@ class PgmEditorProvider implements vscode.CustomTextEditorProvider
         </body>
         </html>
     `;
-	}
+    }
 }

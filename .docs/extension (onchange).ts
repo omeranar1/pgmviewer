@@ -1,91 +1,123 @@
-"use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.activate = activate;
-const vscode = __importStar(require("vscode"));
-function activate(context) {
-    context.subscriptions.push(vscode.window.registerCustomEditorProvider('pgmviewer.pgmEditor', new PgmEditorProvider(context), {
-        supportsMultipleEditorsPerDocument: false
-    }));
+import * as vscode from 'vscode';
+
+export function activate(context: vscode.ExtensionContext)
+{
+    const provider = new PgmEditorProvider(context);
+    context.subscriptions.push(
+        vscode.window.registerCustomEditorProvider(
+            'pgmviewer.pgmEditor',
+            provider,
+            {
+                supportsMultipleEditorsPerDocument: false
+            }
+        )
+    );
+
+    // Dosya değiştiğinde event dinle
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeTextDocument(event =>
+        {
+            provider.onDocumentChanged(event.document);
+        })
+    );
 }
-class PgmEditorProvider {
-    context;
-    constructor(context) {
-        this.context = context;
-    }
-    async resolveCustomTextEditor(document, webviewPanel, _token) {
+
+class PgmEditorProvider implements vscode.CustomTextEditorProvider
+{
+    private webviews = new Map<string, vscode.WebviewPanel>();
+    constructor(private readonly context: vscode.ExtensionContext) { }
+
+    public async resolveCustomTextEditor(
+        document: vscode.TextDocument,
+        webviewPanel: vscode.WebviewPanel,
+        _token: vscode.CancellationToken
+    ): Promise<void>
+    {
         webviewPanel.webview.options = {
             enableScripts: true,
         };
-        // Dosyayı binary olarak oku
-        const fileUri = document.uri;
-        const fileData = await vscode.workspace.fs.readFile(fileUri);
-        const pgmData = this.parseP5Pgm(fileData);
-        webviewPanel.webview.html = this.getHtmlForWebview(pgmData);
+
+        // Webview paneli map'e kaydet
+        this.webviews.set(document.uri.toString(), webviewPanel);
+
+        // Panel kapandığında map'ten çıkar
+        webviewPanel.onDidDispose(() =>
+        {
+            this.webviews.delete(document.uri.toString());
+        });
+
+        await this.updateWebview(document, webviewPanel);
     }
-    parseP5Pgm(data) {
+    public async onDocumentChanged(document: vscode.TextDocument)
+    {
+        const panel = this.webviews.get(document.uri.toString());
+        if (panel)
+        {
+            await this.updateWebview(document, panel);
+        }
+    }
+
+    private async updateWebview(document: vscode.TextDocument, webviewPanel: vscode.WebviewPanel)
+    {
+        try
+        {
+            const fileUri = document.uri;
+            const fileData = await vscode.workspace.fs.readFile(fileUri);
+            const pgmData = this.parseP5Pgm(fileData);
+
+            webviewPanel.webview.html = this.getHtmlForWebview(pgmData);
+        } catch (error)
+        {
+            webviewPanel.webview.html = `<body><h1>Dosya yüklenirken hata oluştu</h1></body>`;
+        }
+    }
+    private parseP5Pgm(data: Uint8Array)
+    {
         const decoder = new TextDecoder("ascii");
-        let headerLines = [];
+
+        let headerLines: string[] = [];
         let headerEndIndex = 0;
         let currentLine = '';
-        for (let i = 0; i < data.length; i++) {
+
+        for (let i = 0; i < data.length; i++)
+        {
             const char = String.fromCharCode(data[i]);
-            if (char === '\n') {
+            if (char === '\n')
+            {
                 const trimmedLine = currentLine.trim();
-                if (trimmedLine.length > 0 && !trimmedLine.startsWith('#')) {
+                if (trimmedLine.length > 0 && !trimmedLine.startsWith('#'))
+                {
                     headerLines.push(trimmedLine);
                 }
-                if (headerLines.length === 3) {
+
+                if (headerLines.length === 3)
+                {
                     headerEndIndex = i + 1; // \n dahil
                     break;
                 }
+
                 currentLine = '';
-            }
-            else {
+            } else
+            {
                 currentLine += char;
             }
         }
-        if (headerLines[0] !== 'P5') {
+
+        if (headerLines[0] !== 'P5')
+        {
             throw new Error('Sadece P5 PGM formatı destekleniyor');
         }
+
         const [width, height] = headerLines[1].split(/\s+/).map(Number);
         const maxGray = Number(headerLines[2]);
+
         const pixels = data.slice(headerEndIndex);
-        if (pixels.length < width * height) {
+
+        if (pixels.length < width * height)
+        {
             console.warn(`Uyarı: Beklenen piksel sayısı ${width * height}, ancak yalnızca ${pixels.length} byte veri var.`);
         }
+
         return {
             width,
             height,
@@ -93,9 +125,13 @@ class PgmEditorProvider {
             pixels
         };
     }
-    getHtmlForWebview(pgmData) {
+
+    private getHtmlForWebview(pgmData: { width: number, height: number, maxGray: number, pixels: Uint8Array })
+    {
         const { width, height, maxGray, pixels } = pgmData;
+
         const base64Pixels = Buffer.from(pixels).toString('base64');
+
         return `
         <!DOCTYPE html>
         <html lang="en">
@@ -450,4 +486,3 @@ class PgmEditorProvider {
     `;
     }
 }
-//# sourceMappingURL=extension.js.map
