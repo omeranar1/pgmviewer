@@ -2,12 +2,13 @@
   "name": "pgmviewer",
   "displayName": "PgmViewer",
   "publisher": "omeranar1",
-  "description": "pgm viewer",
+  "description": "View P5 (binary) PGM images with zoom, pan, and pixel value display in a custom VSCode editor.",
   "repository": {
     "type": "git",
     "url": "https://github.com/omeranar1/pgmviewer"
   },
   "version": "0.0.2",
+  "icon": "images/icon.png",
   "engines": {
     "vscode": "^1.103.0"
   },
