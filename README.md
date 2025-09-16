@@ -40,14 +40,18 @@ A custom editor extension for Visual Studio Code that renders `.pgm` files in **
 - PGM P5 (Binary Portable Graymap) only.
 - Expected header format:
 
-*P5*
+```python
+P5
+width height
+maxGrayValue
+binary pixel data
 
-*width height*
-
-*maxGrayValue*
-
-*binary pixel data*
-
+P5
+# CREATOR: map_saver.cpp 0.050 m/pix
+384 384
+255
+��������........
+```
 ---
 
 ## Installation
