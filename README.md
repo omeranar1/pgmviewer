@@ -1,6 +1,6 @@
 # PGM Viewer for VSCode
 
-A custom editor extension for Visual Studio Code that renders `.pgm` files in **P5 (binary)** Portable Graymap format.
+A custom viewer extension for Visual Studio Code that renders `.pgm` files in **P5 (binary)** Portable Graymap format.
 
 ---
 ## Screenshot
@@ -27,7 +27,7 @@ A custom editor extension for Visual Studio Code that renders `.pgm` files in **
 ## How to Use
 
 1. Open a `.pgm` file (P5 format) in VSCode.
-2. The file will automatically open in the custom PGM viewer editor.
+2. The file will automatically open in the custom PGM viewer.
 3. Zoom in/out using mouse wheel or the `+` / `-` buttons.
 4. Click and drag the image to pan.
 5. Reset the view using the `Reset` button or pressing `R`.
