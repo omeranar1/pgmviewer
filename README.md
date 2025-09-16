@@ -3,6 +3,11 @@
 A custom editor extension for Visual Studio Code that renders `.pgm` files in **P5 (binary)** Portable Graymap format.
 
 ---
+## Screenshot
+
+![Uygulama Ekran Görüntüsü](images/Screenshot_2025-09-16_10-35-49.png)
+
+---
 
 ## Features
 
